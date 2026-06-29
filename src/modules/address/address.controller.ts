@@ -1,6 +1,8 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { AddressService } from './address.service';
+import { Public } from '../../common/decorators/public.decorator';
 
+@Public()
 @Controller('addresses')
 export class AddressController {
   constructor(private readonly addressService: AddressService) {}
