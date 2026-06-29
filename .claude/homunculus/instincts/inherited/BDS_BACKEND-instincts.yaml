@@ -1,0 +1,299 @@
+# Instincts generated from https://github.com/chinguyen1012/BDS_BACKEND
+# Generated: 2026-06-29T07:19:03.021Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: BDS_BACKEND-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/chinguyen1012/BDS_BACKEND
+---
+
+# BDS_BACKEND Commit Length
+
+## Action
+
+Keep commit messages concise (~14 characters)
+
+## Evidence
+
+- Average commit message length: 14 chars
+- Based on 1 commits
+
+---
+id: BDS_BACKEND-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/chinguyen1012/BDS_BACKEND
+---
+
+# BDS_BACKEND Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: BDS_BACKEND-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/chinguyen1012/BDS_BACKEND
+---
+
+# BDS_BACKEND Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: BDS_BACKEND-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/chinguyen1012/BDS_BACKEND
+---
+
+# BDS_BACKEND Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: BDS_BACKEND-arch-feature-based
+trigger: "when adding a new feature"
+confidence: 0.85
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/chinguyen1012/BDS_BACKEND
+---
+
+# BDS_BACKEND Arch Feature Based
+
+## Action
+
+Create a new folder in src/features/ with all related code colocated
+
+## Evidence
+
+- Feature-based module organization detected
+- Structure: src/features/[feature-name]/
+
+---
+id: BDS_BACKEND-test-colocate
+trigger: "when writing tests"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/chinguyen1012/BDS_BACKEND
+---
+
+# BDS_BACKEND Test Colocate
+
+## Action
+
+Place test file next to the source file (e.g., Button.test.tsx next to Button.tsx)
+
+## Evidence
+
+- Colocated test pattern detected
+- Tests live alongside source files
+
+---
+id: bds_backend-instinct-file-naming
+trigger: "When creating a new file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct File Naming
+
+## Action
+
+Name the file using camelCase
+
+## Evidence
+
+- Pattern in architecture.namingConventions.files
+
+---
+id: bds_backend-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Function Naming
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Pattern in architecture.namingConventions.functions
+
+---
+id: bds_backend-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Class Naming
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Pattern in architecture.namingConventions.classes
+
+---
+id: bds_backend-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Constant Naming
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Pattern in architecture.namingConventions.constants
+
+---
+id: bds_backend-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Import Style
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Pattern in codeStyle.importStyle
+
+---
+id: bds_backend-instinct-export-style
+trigger: "When exporting code"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle
+
+---
+id: bds_backend-instinct-test-location
+trigger: "When adding tests for a module or file"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Test Location
+
+## Action
+
+Place the test file in the same folder as the source file (colocated)
+
+## Evidence
+
+- Pattern in architecture.testLocation
+
+---
+id: bds_backend-instinct-feature-module-org
+trigger: "When creating a new module"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Feature Module Org
+
+## Action
+
+Organize the module by feature within the 'modules' directory
+
+## Evidence
+
+- Pattern in architecture.moduleOrganization
+- Pattern in architecture.srcLayout
+
+---
+id: bds_backend-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: chinguyen1012/BDS_BACKEND
+---
+
+# Bds_backend Instinct Git Commit Format
+
+## Action
+
+Use a short, freeform message without a specific prefix
+
+## Evidence
+
+- Pattern in commits.examples
+- Pattern in commits.prefixes
+
