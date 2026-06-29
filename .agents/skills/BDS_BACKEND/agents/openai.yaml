@@ -1,0 +1,6 @@
+interface:
+  display_name: "BDS BACKEND"
+  short_description: "Repo-specific patterns and workflows for BDS_BACKEND"
+  default_prompt: "Use the BDS_BACKEND repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
