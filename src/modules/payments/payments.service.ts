@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
@@ -27,8 +29,15 @@ import { UsersService } from '../users/users.service';
 import { ListingsService } from '../listings/listings.service';
 import { CreateTopupPaymentDto } from './dto/create-topup-payment.dto';
 import { CreateListingPaymentDto } from './dto/create-listing-payment.dto';
+import { CreateListingRenewalPaymentDto } from './dto/create-listing-renewal-payment.dto';
 import { CreateListingDto } from '../listings/dto/create-listing.dto';
 import { calcListingPrice } from '../../common/utils/listing-price.util';
+import { ListingStatus } from '../../common/enums/listing.enums';
+import { OrgWalletService } from '../org-wallet/org-wallet.service';
+import { BudgetPoliciesService } from '../budget-policies/budget-policies.service';
+import { OrgMembershipsService } from '../org-memberships/org-memberships.service';
+import { ListingContext, OrgTransactionType, WalletType } from '../../common/enums/organization.enums';
+import { ListingDocument } from '../listings/schemas/listing.schema';
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   [PaymentMethod.QR]: 'Mã QR Sepay',
@@ -52,6 +61,10 @@ export class PaymentsService {
     private readonly usersService: UsersService,
     private readonly listingsService: ListingsService,
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => OrgWalletService))
+    private readonly orgWalletService: OrgWalletService,
+    private readonly budgetPoliciesService: BudgetPoliciesService,
+    private readonly orgMembershipsService: OrgMembershipsService,
   ) {}
 
   private callbackUrl(path: string) {
@@ -143,6 +156,13 @@ export class PaymentsService {
   }
 
   async createListingPayment(userId: string, dto: CreateListingPaymentDto) {
+    if (
+      dto.context === ListingContext.ORGANIZATION &&
+      dto.organizationId
+    ) {
+      return this.submitOrgListing(userId, dto);
+    }
+
     const totalAmount = calcListingPrice(dto.package, dto.duration ?? 7);
     const user = await this.usersService.findOne(userId);
     const balance = user.balance ?? 0;
@@ -201,6 +221,342 @@ export class PaymentsService {
       balance,
       balanceUsed,
       checkout,
+    };
+  }
+
+  async createListingRenewalPayment(
+    userId: string,
+    dto: CreateListingRenewalPaymentDto,
+  ) {
+    const listing = await this.listingsService.findOne(dto.listingId);
+    const orgId = this.resolveOrgId(listing);
+
+    if (orgId) {
+      await this.orgMembershipsService.assertOwnerOrManager(orgId, userId);
+    } else if (listing.owner.toString() !== userId) {
+      throw new BadRequestException('Bạn không có quyền gia hạn tin này');
+    }
+
+    const renewable = [
+      ListingStatus.ACTIVE,
+      ListingStatus.PUBLISHED,
+      ListingStatus.EXPIRED,
+    ];
+    if (!renewable.includes(listing.status)) {
+      throw new BadRequestException(
+        'Chỉ gia hạn được tin đang hiển thị hoặc đã hết hạn. Tin chờ duyệt / bị từ chối không thể gia hạn.',
+      );
+    }
+
+    const pkg = dto.package || listing.package || 'standard';
+    const duration = dto.duration || 7;
+    const totalAmount = calcListingPrice(pkg, duration);
+
+    if (orgId) {
+      return this.createOrgListingRenewalPayment(
+        userId,
+        orgId,
+        listing,
+        dto.listingId,
+        pkg,
+        duration,
+        totalAmount,
+      );
+    }
+
+    const user = await this.usersService.findOne(userId);
+    const balance = user.balance ?? 0;
+    const balanceUsed = Math.min(balance, totalAmount);
+    const payAmount = Math.max(0, totalAmount - balanceUsed);
+
+    if (payAmount === 0) {
+      return this.completeRenewalWithBalance(
+        userId,
+        dto.listingId,
+        duration,
+        totalAmount,
+        balanceUsed,
+        listing.title,
+      );
+    }
+
+    const invoiceNumber = this.sepayService.createInvoice('RENEW');
+    const paymentCode = this.sepayService.createPaymentCode();
+    const description = `Gia hạn tin ${duration} ngày - ${listing.title}`;
+
+    const transaction = await this.transactionsService.createPending({
+      owner: userId,
+      type: TransactionType.SPEND,
+      description,
+      amount: -totalAmount,
+      method: PaymentMethod.QR,
+      invoiceNumber,
+    });
+
+    const order = await this.paymentOrderModel.create({
+      owner: new Types.ObjectId(userId),
+      invoiceNumber,
+      paymentCode,
+      purpose: PaymentPurpose.LISTING_RENEWAL,
+      status: PaymentOrderStatus.PENDING,
+      payAmount,
+      totalAmount,
+      balanceUsed,
+      method: PaymentMethod.QR,
+      transactionId: transaction._id,
+      listingId: new Types.ObjectId(dto.listingId),
+      listingDraft: {
+        duration,
+        package: pkg,
+        listingId: dto.listingId,
+      },
+      description,
+    });
+
+    const checkout = this.buildCheckout(
+      invoiceNumber,
+      paymentCode,
+      payAmount,
+      description,
+      userId,
+    );
+
+    return {
+      mode: 'sepay' as const,
+      invoiceNumber,
+      paymentCode,
+      orderId: order._id,
+      payAmount,
+      totalAmount,
+      balance,
+      balanceUsed,
+      checkout,
+    };
+  }
+
+  private resolveOrgId(listing: ListingDocument): string | null {
+    if (listing.context !== ListingContext.ORGANIZATION) return null;
+    return listing.organizationId?.toString() ?? null;
+  }
+
+  private async createOrgListingRenewalPayment(
+    userId: string,
+    organizationId: string,
+    listing: ListingDocument,
+    listingId: string,
+    pkg: string,
+    duration: number,
+    totalAmount: number,
+  ) {
+    const wallet = await this.orgWalletService.getBalance(organizationId);
+    const balance = wallet.balance ?? 0;
+    const balanceUsed = Math.min(balance, totalAmount);
+    const payAmount = Math.max(0, totalAmount - balanceUsed);
+
+    if (payAmount === 0) {
+      return this.completeOrgRenewalWithBalance(
+        userId,
+        organizationId,
+        listingId,
+        duration,
+        totalAmount,
+        balanceUsed,
+        listing.title,
+      );
+    }
+
+    const invoiceNumber = this.sepayService.createInvoice('ORENEW');
+    const paymentCode = this.sepayService.createPaymentCode();
+    const description = `Gia hạn tin org ${duration} ngày - ${listing.title}`;
+
+    const order = await this.paymentOrderModel.create({
+      owner: new Types.ObjectId(userId),
+      organizationId: new Types.ObjectId(organizationId),
+      walletType: WalletType.ORGANIZATION,
+      invoiceNumber,
+      paymentCode,
+      purpose: PaymentPurpose.LISTING_RENEWAL,
+      status: PaymentOrderStatus.PENDING,
+      payAmount,
+      totalAmount,
+      balanceUsed,
+      method: PaymentMethod.QR,
+      listingId: new Types.ObjectId(listingId),
+      listingDraft: {
+        duration,
+        package: pkg,
+        listingId,
+      },
+      description,
+    });
+
+    const checkout = this.buildCheckout(
+      invoiceNumber,
+      paymentCode,
+      payAmount,
+      description,
+      userId,
+    );
+
+    return {
+      mode: 'sepay' as const,
+      invoiceNumber,
+      paymentCode,
+      orderId: order._id,
+      payAmount,
+      totalAmount,
+      balance,
+      balanceUsed,
+      checkout,
+      organizationId,
+    };
+  }
+
+  private async completeRenewalWithBalance(
+    userId: string,
+    listingId: string,
+    duration: number,
+    totalAmount: number,
+    balanceUsed: number,
+    title: string,
+  ) {
+    if (balanceUsed > 0) {
+      await this.transactionsService.spend(
+        userId,
+        balanceUsed,
+        `Gia hạn tin: ${title}`,
+      );
+    }
+
+    const listing = await this.listingsService.renew(listingId, {
+      days: duration,
+      userId,
+      paid: true,
+    });
+
+    const user = await this.usersService.findOne(userId);
+
+    return {
+      mode: 'balance' as const,
+      listing,
+      totalAmount,
+      balanceUsed,
+      payAmount: 0,
+      balance: user.balance,
+    };
+  }
+
+  private async completeOrgRenewalWithBalance(
+    userId: string,
+    organizationId: string,
+    listingId: string,
+    duration: number,
+    totalAmount: number,
+    balanceUsed: number,
+    title: string,
+  ) {
+    if (balanceUsed > 0) {
+      await this.orgWalletService.adjustBalance(organizationId, -balanceUsed, {
+        type: OrgTransactionType.SPEND,
+        description: `Gia hạn tin: ${title}`,
+        performedBy: userId,
+        listingId,
+      });
+    }
+
+    const listing = await this.listingsService.renew(listingId, {
+      days: duration,
+      userId,
+      paid: true,
+    });
+
+    const wallet = await this.orgWalletService.getBalance(organizationId);
+
+    return {
+      mode: 'balance' as const,
+      listing,
+      totalAmount,
+      balanceUsed,
+      payAmount: 0,
+      balance: wallet.balance,
+      organizationId,
+    };
+  }
+
+  private async submitOrgListing(
+    userId: string,
+    dto: CreateListingPaymentDto,
+  ) {
+    const orgId = dto.organizationId!;
+    const totalAmount = calcListingPrice(dto.package, dto.duration ?? 7);
+
+    await this.budgetPoliciesService.assertCanPost(
+      orgId,
+      userId,
+      totalAmount,
+      dto.package ?? 'standard',
+    );
+
+    const listing = await this.listingsService.createOrgPending(
+      userId,
+      orgId,
+      dto,
+    );
+
+    return {
+      mode: 'org_pending' as const,
+      listing,
+      totalAmount,
+      status: listing.status,
+      organizationId: orgId,
+    };
+  }
+
+  async createOrgTopupPayment(
+    userId: string,
+    organizationId: string,
+    dto: CreateTopupPaymentDto,
+  ) {
+    const invoiceNumber = this.sepayService.createInvoice('ORGTOP');
+    const paymentCode = this.sepayService.createPaymentCode();
+    const description = `Nạp ví Organization ${dto.amount.toLocaleString('vi-VN')}đ`;
+
+    const order = await this.paymentOrderModel.create({
+      owner: new Types.ObjectId(userId),
+      organizationId: new Types.ObjectId(organizationId),
+      walletType: WalletType.ORGANIZATION,
+      invoiceNumber,
+      paymentCode,
+      purpose: PaymentPurpose.ORG_TOPUP,
+      status: PaymentOrderStatus.PENDING,
+      payAmount: dto.amount,
+      totalAmount: dto.amount,
+      balanceUsed: 0,
+      method: dto.method,
+      description,
+    });
+
+    const checkout = this.buildCheckout(
+      invoiceNumber,
+      paymentCode,
+      dto.amount,
+      description,
+      userId,
+    );
+
+    const balance = await this.orgWalletService.getBalance(organizationId);
+
+    return {
+      mode: 'sepay' as const,
+      invoiceNumber,
+      paymentCode,
+      orderId: order._id,
+      payAmount: dto.amount,
+      totalAmount: dto.amount,
+      balance: balance.balance,
+      balanceUsed: 0,
+      checkout,
+      organizationId,
     };
   }
 
@@ -488,6 +844,21 @@ export class PaymentsService {
         order.transactionId!.toString(),
       );
       await this.usersService.adjustBalance(userId, order.totalAmount);
+    } else if (order.purpose === PaymentPurpose.ORG_TOPUP) {
+      if (!order.organizationId) {
+        throw new BadRequestException('Thiếu organizationId cho nạp ví org');
+      }
+      await this.orgWalletService.adjustBalance(
+        order.organizationId.toString(),
+        order.totalAmount,
+        {
+          type: OrgTransactionType.TOPUP,
+          description: order.description ?? 'Nạp ví Organization',
+          performedBy: userId,
+          paymentOrderId: order._id.toString(),
+          invoiceNumber: order.invoiceNumber,
+        },
+      );
     } else if (order.purpose === PaymentPurpose.LISTING) {
       if (order.balanceUsed > 0) {
         const user = await this.usersService.findOne(userId);
@@ -511,6 +882,55 @@ export class PaymentsService {
       await this.transactionsService.completePending(
         order.transactionId!.toString(),
       );
+    } else if (order.purpose === PaymentPurpose.LISTING_RENEWAL) {
+      const draft = (order.listingDraft ?? {}) as {
+        duration?: number;
+        listingId?: string;
+      };
+      const listingId =
+        order.listingId?.toString() || draft.listingId || '';
+      const duration = Number(draft.duration) || 7;
+
+      if (!listingId) {
+        throw new BadRequestException('Thiếu listingId cho gia hạn tin');
+      }
+
+      if (order.organizationId) {
+        if (order.balanceUsed > 0) {
+          await this.orgWalletService.adjustBalance(
+            order.organizationId.toString(),
+            -order.balanceUsed,
+            {
+              type: OrgTransactionType.SPEND,
+              description: order.description ?? 'Gia hạn tin Organization',
+              performedBy: userId,
+              listingId,
+              paymentOrderId: order._id.toString(),
+              invoiceNumber: order.invoiceNumber,
+            },
+          );
+        }
+      } else if (order.balanceUsed > 0) {
+        const user = await this.usersService.findOne(userId);
+        if ((user.balance ?? 0) < order.balanceUsed) {
+          throw new BadRequestException(
+            'Số dư không đủ để hoàn tất gia hạn tin',
+          );
+        }
+        await this.usersService.adjustBalance(userId, -order.balanceUsed);
+      }
+
+      await this.listingsService.renew(listingId, {
+        days: duration,
+        userId,
+        paid: true,
+      });
+
+      if (order.transactionId) {
+        await this.transactionsService.completePending(
+          order.transactionId.toString(),
+        );
+      }
     }
 
     order.status = PaymentOrderStatus.SUCCESS;

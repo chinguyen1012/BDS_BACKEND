@@ -5,8 +5,8 @@ import {
   Get,
   Param,
   Patch,
-  Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 
 import { ListingsService } from './listings.service';
@@ -15,7 +15,6 @@ import { QueryListingDto } from './dto/query-listing.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
-import { UseGuards } from '@nestjs/common';
 
 // Lưu ý: KHÔNG có endpoint POST /listings.
 // Tin đăng chỉ được tạo qua cổng thanh toán: POST /payments/listing
@@ -46,10 +45,8 @@ export class ListingsController {
     return this.listingsService.update(id, dto);
   }
 
-  @Post(':id/renew')
-  renew(@Param('id') id: string) {
-    return this.listingsService.renew(id);
-  }
+  // Gia hạn bắt buộc qua POST /payments/listing-renewal (có thanh toán).
+  // Endpoint free /listings/:id/renew đã gỡ để tránh bỏ qua phí / duyệt.
 
   @Delete(':id')
   remove(@Param('id') id: string) {

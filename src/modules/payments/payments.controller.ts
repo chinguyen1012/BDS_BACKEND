@@ -10,6 +10,7 @@ import {
 import { PaymentsService } from './payments.service';
 import { CreateTopupPaymentDto } from './dto/create-topup-payment.dto';
 import { CreateListingPaymentDto } from './dto/create-listing-payment.dto';
+import { CreateListingRenewalPaymentDto } from './dto/create-listing-renewal-payment.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -31,6 +32,14 @@ export class PaymentsController {
     @Body() dto: CreateListingPaymentDto,
   ) {
     return this.paymentsService.createListingPayment(userId, dto);
+  }
+
+  @Post('listing-renewal')
+  createListingRenewalPayment(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: CreateListingRenewalPaymentDto,
+  ) {
+    return this.paymentsService.createListingRenewalPayment(userId, dto);
   }
 
   @Get(':invoiceNumber/status')

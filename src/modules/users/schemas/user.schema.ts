@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
+import { SystemRole } from '../../../common/enums/user.enums';
+
 export type UserDocument = HydratedDocument<User>;
 
 @Schema({ _id: false })
@@ -45,6 +47,9 @@ export class User {
 
   @Prop({ enum: ['individual', 'pro', 'business'], default: 'individual' })
   accountType: string;
+
+  @Prop({ enum: SystemRole, default: SystemRole.USER })
+  systemRole: SystemRole;
 
   @Prop({ default: 0, min: 0 })
   balance: number;

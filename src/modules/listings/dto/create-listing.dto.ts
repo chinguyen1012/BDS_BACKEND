@@ -46,6 +46,22 @@ export class CreateListingDto {
   project?: string;
 
   @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
+  @IsString()
+  sheetNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  plotNumber?: string;
+
+  @IsOptional()
   @IsString()
   propertyType?: string;
 

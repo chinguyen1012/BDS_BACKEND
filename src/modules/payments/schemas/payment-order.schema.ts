@@ -6,6 +6,7 @@ import {
   PaymentPurpose,
 } from '../../../common/enums/payment.enums';
 import { PaymentMethod } from '../../../common/enums/transaction.enums';
+import { WalletType } from '../../../common/enums/organization.enums';
 
 export type PaymentOrderDocument = HydratedDocument<PaymentOrder>;
 
@@ -56,6 +57,12 @@ export class PaymentOrder {
 
   @Prop()
   description?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Organization', index: true })
+  organizationId?: Types.ObjectId;
+
+  @Prop({ enum: WalletType, default: WalletType.PERSONAL })
+  walletType: WalletType;
 }
 
 export const PaymentOrderSchema = SchemaFactory.createForClass(PaymentOrder);

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { PaymentsController } from './payments.controller';
@@ -12,6 +12,9 @@ import {
 import { TransactionsModule } from '../transactions/transactions.module';
 import { UsersModule } from '../users/users.module';
 import { ListingsModule } from '../listings/listings.module';
+import { OrgWalletModule } from '../org-wallet/org-wallet.module';
+import { BudgetPoliciesModule } from '../budget-policies/budget-policies.module';
+import { OrgMembershipsModule } from '../org-memberships/org-memberships.module';
 
 @Module({
   imports: [
@@ -21,6 +24,9 @@ import { ListingsModule } from '../listings/listings.module';
     TransactionsModule,
     UsersModule,
     ListingsModule,
+    forwardRef(() => OrgWalletModule),
+    BudgetPoliciesModule,
+    OrgMembershipsModule,
   ],
   controllers: [PaymentsController, PaymentWebhookController],
   providers: [PaymentsService, SepayService],

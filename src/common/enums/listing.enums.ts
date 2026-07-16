@@ -4,6 +4,13 @@ export enum ListingStatus {
   EXPIRED = 'expired',
   DRAFT = 'draft',
   REJECTED = 'rejected',
+  /** Organization workflow */
+  PENDING_MANAGER = 'pending_manager',
+  REJECTED_BY_MANAGER = 'rejected_by_manager',
+  PENDING_ADMIN = 'pending_admin',
+  REJECTED_BY_ADMIN = 'rejected_by_admin',
+  PUBLISHED = 'published',
+  ARCHIVED = 'archived',
 }
 
 export enum ListingPackage {

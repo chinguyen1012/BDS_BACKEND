@@ -6,13 +6,46 @@ import {
   ListingPurpose,
   ListingStatus,
 } from '../../../common/enums/listing.enums';
+import { ListingContext } from '../../../common/enums/organization.enums';
 
 export type ListingDocument = HydratedDocument<Listing>;
+
+@Schema({ _id: false })
+export class ApprovalHistoryEntry {
+  @Prop({ required: true })
+  step: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  actorId?: Types.ObjectId;
+
+  @Prop({ required: true })
+  action: string;
+
+  @Prop()
+  note?: string;
+
+  @Prop({ default: () => new Date() })
+  at: Date;
+}
+
+const ApprovalHistorySchema = SchemaFactory.createForClass(ApprovalHistoryEntry);
 
 @Schema({ timestamps: true })
 export class Listing {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   owner: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
+  postedBy?: Types.ObjectId;
+
+  @Prop({ enum: ListingContext, default: ListingContext.PERSONAL, index: true })
+  context: ListingContext;
+
+  @Prop({ type: Types.ObjectId, ref: 'Organization', index: true })
+  organizationId?: Types.ObjectId;
+
+  @Prop({ type: [ApprovalHistorySchema], default: [] })
+  approvalHistory: ApprovalHistoryEntry[];
 
   @Prop({ required: true, trim: true })
   title: string;
@@ -38,6 +71,20 @@ export class Listing {
 
   @Prop({ trim: true })
   project: string;
+
+  @Prop()
+  latitude?: number;
+
+  @Prop()
+  longitude?: number;
+
+  /** Số tờ bản đồ địa chính */
+  @Prop({ trim: true })
+  sheetNumber?: string;
+
+  /** Số thửa đất */
+  @Prop({ trim: true })
+  plotNumber?: string;
 
   // Thông tin BĐS
   @Prop({ trim: true })
@@ -99,6 +146,10 @@ export class Listing {
 
   @Prop({ default: 0 })
   contacts: number;
+
+  /** Chi phí đăng tin (tính từ gói + thời hạn) */
+  @Prop({ default: 0 })
+  postCost: number;
 }
 
 export const ListingSchema = SchemaFactory.createForClass(Listing);
