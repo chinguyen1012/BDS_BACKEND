@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -27,14 +28,28 @@ import { SeedModule } from './modules/seed/seed.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { NewsModule } from './modules/news/news.module';
+import { AuctionModule } from './modules/auction/auction.module';
+import { FrontendRevalidateModule } from './common/frontend-revalidate/frontend-revalidate.module';
+
+const isProd = process.env.NODE_ENV === 'production';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    FrontendRevalidateModule,
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: isProd ? 120 : 300,
+      },
+    ]),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         uri: config.get<string>('MONGODB_URI'),
+        maxPoolSize: isProd ? 50 : 10,
       }),
     }),
     AuthModule,
@@ -53,15 +68,18 @@ import { ProjectsModule } from './modules/projects/projects.module';
     NotificationsModule,
     DepartmentsModule,
     StatsModule,
-    SeedModule,
+    ...(isProd ? [] : [SeedModule]),
     UploadModule,
     PaymentsModule,
     ProjectsModule,
+    NewsModule,
+    AuctionModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

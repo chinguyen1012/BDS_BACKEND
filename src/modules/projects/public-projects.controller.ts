@@ -19,6 +19,11 @@ export class PublicProjectsController {
     return this.projectsService.findPublicDevelopers();
   }
 
+  @Get('options')
+  options(@Query('search') search?: string) {
+    return this.projectsService.findOptions(search);
+  }
+
   @Get(':slug')
   findOne(@Param('slug') slug: string) {
     return this.projectsService.findPublicOne(slug);

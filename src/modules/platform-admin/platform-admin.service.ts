@@ -1,4 +1,8 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 
@@ -12,9 +16,23 @@ import {
   OrganizationDocument,
 } from '../organizations/schemas/organization.schema';
 import { Listing, ListingDocument } from '../listings/schemas/listing.schema';
+import {
+  PlatformSetting,
+  PlatformSettingDocument,
+} from '../auction/schemas/platform-setting.schema';
 import { ListingStatus } from '../../common/enums/listing.enums';
+import { ListingContext } from '../../common/enums/organization.enums';
 import { SystemRole } from '../../common/enums/user.enums';
 import { PERMISSIONS } from '../../common/permissions/permission.constants';
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+  normalizePagination,
+  paginatedResult,
+} from '../../common/utils/pagination.util';
+
+const PAGINATION_SETTINGS_KEY = 'pagination';
 
 @Injectable()
 export class PlatformAdminService implements OnModuleInit {
@@ -27,6 +45,8 @@ export class PlatformAdminService implements OnModuleInit {
     private readonly orgModel: Model<OrganizationDocument>,
     @InjectModel(Listing.name)
     private readonly listingModel: Model<ListingDocument>,
+    @InjectModel(PlatformSetting.name)
+    private readonly settingModel: Model<PlatformSettingDocument>,
   ) {}
 
   /** Đồng bộ legacy platform_admins → user.systemRole */
@@ -46,10 +66,61 @@ export class PlatformAdminService implements OnModuleInit {
         { $set: { systemRole: SystemRole.SYSTEM_ADMIN } },
       )
       .exec();
+
+    await this.ensurePaginationSettings();
+  }
+
+  private async ensurePaginationSettings() {
+    const existing = await this.settingModel
+      .findOne({ key: PAGINATION_SETTINGS_KEY })
+      .exec();
+    if (existing) return;
+    await this.settingModel.create({
+      key: PAGINATION_SETTINGS_KEY,
+      pagination: { pageSize: DEFAULT_PAGE_SIZE },
+    });
+  }
+
+  async getPaginationSettings() {
+    await this.ensurePaginationSettings();
+    const doc = await this.settingModel
+      .findOne({ key: PAGINATION_SETTINGS_KEY })
+      .exec();
+    return {
+      pageSize: doc?.pagination?.pageSize ?? DEFAULT_PAGE_SIZE,
+    };
+  }
+
+  async updatePaginationSettings(pageSize: number) {
+    const size = Number(pageSize);
+    if (
+      !Number.isFinite(size) ||
+      size < MIN_PAGE_SIZE ||
+      size > MAX_PAGE_SIZE
+    ) {
+      throw new BadRequestException(
+        `Số bản ghi mỗi trang phải từ ${MIN_PAGE_SIZE} đến ${MAX_PAGE_SIZE}`,
+      );
+    }
+    const safe = Math.floor(size);
+    await this.ensurePaginationSettings();
+    const doc = await this.settingModel
+      .findOneAndUpdate(
+        { key: PAGINATION_SETTINGS_KEY },
+        { $set: { pagination: { pageSize: safe } } },
+        { new: true },
+      )
+      .exec();
+    return {
+      pageSize: doc?.pagination?.pageSize ?? safe,
+    };
   }
 
   async isSystemAdmin(userId: string) {
-    const user = await this.userModel.findById(userId).select('systemRole').exec();
+    const user = await this.userModel
+      .findById(userId)
+      .select('systemRole')
+      .exec();
     return user?.systemRole === SystemRole.SYSTEM_ADMIN;
   }
 
@@ -82,7 +153,15 @@ export class PlatformAdminService implements OnModuleInit {
         ])
         .exec(),
       this.listingModel
-        .countDocuments({ status: ListingStatus.PENDING_ADMIN })
+        .countDocuments({
+          $or: [
+            { status: ListingStatus.PENDING_ADMIN },
+            {
+              context: { $ne: ListingContext.ORGANIZATION },
+              status: ListingStatus.PENDING,
+            },
+          ],
+        })
         .exec(),
       this.listingModel
         .countDocuments({ status: ListingStatus.PENDING_MANAGER })
@@ -94,10 +173,19 @@ export class PlatformAdminService implements OnModuleInit {
         ])
         .exec(),
       this.listingModel
-        .find({ status: ListingStatus.PENDING_ADMIN })
+        .find({
+          $or: [
+            { status: ListingStatus.PENDING_ADMIN },
+            {
+              context: { $ne: ListingContext.ORGANIZATION },
+              status: ListingStatus.PENDING,
+            },
+          ],
+        })
         .sort({ createdAt: -1 })
         .limit(5)
         .populate('postedBy', 'name email')
+        .populate('owner', 'name email')
         .populate('organizationId', 'name slug')
         .exec(),
     ]);
@@ -120,15 +208,32 @@ export class PlatformAdminService implements OnModuleInit {
     };
   }
 
-  listListings(status?: ListingStatus) {
+  async listListings(
+    status?: ListingStatus,
+    page?: number | string,
+    limit?: number | string,
+  ) {
+    const settings = await this.getPaginationSettings();
+    const { page: safePage, limit: safeLimit, skip } = normalizePagination(
+      page,
+      limit,
+      settings.pageSize,
+    );
     const filter = status ? { status: status as ListingStatus } : {};
-    return this.listingModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .populate('postedBy', 'name email')
-      .populate('organizationId', 'name slug')
-      .populate('owner', 'name email')
-      .exec();
+
+    const [items, total] = await Promise.all([
+      this.listingModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .populate('postedBy', 'name email')
+        .populate('organizationId', 'name slug')
+        .populate('owner', 'name email')
+        .exec(),
+      this.listingModel.countDocuments(filter).exec(),
+    ]);
+
+    return paginatedResult(items, total, safePage, safeLimit);
   }
 }

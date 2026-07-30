@@ -1,4 +1,5 @@
 import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ListingStatus } from '../../../common/enums/listing.enums';
 
 export class QueryListingDto {
@@ -13,4 +14,12 @@ export class QueryListingDto {
   @IsOptional()
   @IsString()
   owner?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  limit?: number;
 }

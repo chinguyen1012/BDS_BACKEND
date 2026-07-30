@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 
 import { Public } from '../../common/decorators/public.decorator';
 import { ListingsService } from './listings.service';
@@ -10,6 +11,7 @@ export class PublicListingsController {
   constructor(private readonly listingsService: ListingsService) {}
 
   @Get()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   findAll(@Query() query: QueryPublicListingDto) {
     return this.listingsService.findPublicListings(query);
   }

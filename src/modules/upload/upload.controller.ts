@@ -10,6 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { diskStorage } from 'multer';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'listings');
@@ -19,8 +20,9 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 @Controller('upload')
 export class UploadController {
   @Post('images')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @UseInterceptors(
-    FilesInterceptor('files', 24, {
+    FilesInterceptor('files', 12, {
       storage: diskStorage({
         destination: UPLOAD_DIR,
         filename: (_req, file, cb) => {
@@ -35,7 +37,7 @@ export class UploadController {
         }
         cb(null, true);
       },
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
   uploadImages(

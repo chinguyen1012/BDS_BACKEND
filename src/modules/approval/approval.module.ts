@@ -9,6 +9,7 @@ import {
 } from './listing-approval.controller';
 import { BudgetPoliciesModule } from '../budget-policies/budget-policies.module';
 import { OrgWalletModule } from '../org-wallet/org-wallet.module';
+import { TransactionsModule } from '../transactions/transactions.module';
 import {
   OrgRoleTemplate,
   OrgRoleTemplateSchema,
@@ -25,6 +26,7 @@ import { PlatformAdminGuard } from '../../common/permissions/platform-admin.guar
   imports: [
     BudgetPoliciesModule,
     OrgWalletModule,
+    TransactionsModule,
     MongooseModule.forFeature([
       { name: Listing.name, schema: ListingSchema },
       { name: OrgRoleTemplate.name, schema: OrgRoleTemplateSchema },

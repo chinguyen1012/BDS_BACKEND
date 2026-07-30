@@ -31,6 +31,10 @@ export class CreateListingDto {
 
   @IsOptional()
   @IsString()
+  district?: string;
+
+  @IsOptional()
+  @IsString()
   ward?: string;
 
   @IsOptional()
@@ -44,6 +48,10 @@ export class CreateListingDto {
   @IsOptional()
   @IsString()
   project?: string;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string;
 
   @IsOptional()
   @IsNumber()

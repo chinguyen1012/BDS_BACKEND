@@ -580,7 +580,7 @@ export class PaymentsService {
         owner: userId,
         status: totalAmount > 0 ? undefined : dto.status,
       },
-      { paid: true },
+      { paid: true, postCost: totalAmount },
     );
 
     const user = await this.usersService.findOne(userId);
@@ -875,7 +875,7 @@ export class PaymentsService {
           ...(order.listingDraft as unknown as CreateListingDto),
           owner: userId,
         },
-        { paid: true },
+        { paid: true, postCost: order.totalAmount },
       );
 
       order.listingId = new Types.ObjectId(String(listing._id));

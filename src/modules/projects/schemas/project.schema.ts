@@ -25,17 +25,55 @@ export class Project {
   @Prop({ type: [String], default: [] })
   images!: string[];
 
+  /** Gallery mặt bằng dự án */
+  @Prop({ type: [String], default: [] })
+  floorPlanImages!: string[];
+
+  /** Gallery hạ tầng */
+  @Prop({ type: [String], default: [] })
+  infrastructureImages!: string[];
+
   @Prop({ trim: true, index: true })
   province?: string;
+
+  /** Quận/Huyện (có thể trống theo địa giới mới) */
+  @Prop({ trim: true })
+  district?: string;
 
   @Prop({ trim: true })
   ward?: string;
 
   @Prop({ trim: true })
-  address?: string;
+  street?: string;
 
   @Prop({ trim: true })
+  address?: string;
+
+  @Prop()
+  latitude?: number;
+
+  @Prop()
+  longitude?: number;
+
+  /** Tổng quan ngắn */
+  @Prop({ trim: true })
   description?: string;
+
+  /** Giới thiệu chi tiết (HTML/text dài) */
+  @Prop({ trim: true })
+  introduction?: string;
+
+  /** Nội dung mặt bằng */
+  @Prop({ trim: true })
+  floorPlanContent?: string;
+
+  /** Tổng thể hạ tầng */
+  @Prop({ trim: true })
+  infrastructure?: string;
+
+  /** Mô tả vị trí */
+  @Prop({ trim: true })
+  locationNote?: string;
 
   @Prop({ type: [String], default: [] })
   highlights!: string[];

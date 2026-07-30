@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { PlatformAdminService } from './platform-admin.service';
-import { PlatformAdminController } from './platform-admin.controller';
+import {
+  PlatformAdminController,
+  PublicSettingsController,
+} from './platform-admin.controller';
 import {
   PlatformAdmin,
   PlatformAdminSchema,
@@ -13,6 +16,10 @@ import {
   OrganizationSchema,
 } from '../organizations/schemas/organization.schema';
 import { Listing, ListingSchema } from '../listings/schemas/listing.schema';
+import {
+  PlatformSetting,
+  PlatformSettingSchema,
+} from '../auction/schemas/platform-setting.schema';
 import { PlatformAdminGuard } from '../../common/permissions/platform-admin.guard';
 
 @Module({
@@ -22,9 +29,10 @@ import { PlatformAdminGuard } from '../../common/permissions/platform-admin.guar
       { name: User.name, schema: UserSchema },
       { name: Organization.name, schema: OrganizationSchema },
       { name: Listing.name, schema: ListingSchema },
+      { name: PlatformSetting.name, schema: PlatformSettingSchema },
     ]),
   ],
-  controllers: [PlatformAdminController],
+  controllers: [PlatformAdminController, PublicSettingsController],
   providers: [PlatformAdminService, PlatformAdminGuard],
   exports: [PlatformAdminService, PlatformAdminGuard],
 })

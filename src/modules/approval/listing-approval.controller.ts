@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
@@ -60,8 +61,8 @@ export class PlatformAdminListingsController {
   constructor(private readonly approvalService: ListingApprovalService) {}
 
   @Get('pending')
-  pending() {
-    return this.approvalService.listPendingForPlatform();
+  pending(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.approvalService.listPendingForPlatform(page, limit);
   }
 
   @Post(':id/approve')

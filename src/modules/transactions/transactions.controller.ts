@@ -14,8 +14,10 @@ export class TransactionsController {
   findAll(
     @CurrentUser('sub') userId: string,
     @Query('type') type?: TransactionType,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.transactionsService.findAll(userId, type);
+    return this.transactionsService.findAll(userId, type, page, limit);
   }
 
   @Get('summary')

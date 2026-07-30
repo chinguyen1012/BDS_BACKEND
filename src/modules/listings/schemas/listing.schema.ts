@@ -50,6 +50,12 @@ export class Listing {
   @Prop({ required: true, trim: true })
   title: string;
 
+  /**
+   * Mã tin công khai (vd: BDS-A3K9M2) — dùng search / URL thay ObjectId.
+   */
+  @Prop({ trim: true, unique: true, sparse: true, uppercase: true, index: true })
+  publicCode?: string;
+
   @Prop({ trim: true })
   description: string;
 
@@ -59,6 +65,9 @@ export class Listing {
   // Địa chỉ
   @Prop({ trim: true })
   province: string;
+
+  @Prop({ trim: true })
+  district?: string;
 
   @Prop({ trim: true })
   ward: string;
@@ -71,6 +80,10 @@ export class Listing {
 
   @Prop({ trim: true })
   project: string;
+
+  /** Liên kết dự án (nếu chọn từ danh mục) */
+  @Prop({ type: Types.ObjectId, ref: 'Project', index: true })
+  projectId?: Types.ObjectId;
 
   @Prop()
   latitude?: number;
@@ -147,9 +160,13 @@ export class Listing {
   @Prop({ default: 0 })
   contacts: number;
 
-  /** Chi phí đăng tin (tính từ gói + thời hạn) */
+  /** Chi phí đăng tin đã thanh toán (0 = miễn phí) */
+  @Prop()
+  postCost?: number;
+
+  /** Đã hoàn về ví khi Admin từ chối (tránh hoàn 2 lần) */
   @Prop({ default: 0 })
-  postCost: number;
+  refundedAmount: number;
 }
 
 export const ListingSchema = SchemaFactory.createForClass(Listing);
