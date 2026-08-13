@@ -19,6 +19,8 @@ import {
   paginatedResult,
 } from '../../common/utils/pagination.util';
 import { FrontendRevalidateService } from '../../common/frontend-revalidate/frontend-revalidate.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationCategory } from '../../common/enums/notification.enums';
 
 @Injectable()
 export class ListingApprovalService {
@@ -29,6 +31,7 @@ export class ListingApprovalService {
     private readonly walletService: OrgWalletService,
     private readonly transactionsService: TransactionsService,
     private readonly frontendRevalidate: FrontendRevalidateService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   listPendingForManager(organizationId: string) {
@@ -128,6 +131,38 @@ export class ListingApprovalService {
     return trimmed;
   }
 
+  private listingRecipientId(listing: ListingDocument) {
+    return (listing.postedBy ?? listing.owner)?.toString();
+  }
+
+  private async notifyListingOwner(
+    listing: ListingDocument,
+    data: {
+      type: string;
+      title: string;
+      body: string;
+    },
+  ) {
+    const userId = this.listingRecipientId(listing);
+    if (!userId) return;
+    try {
+      await this.notificationsService.create({
+        userId,
+        organizationId: listing.organizationId?.toString(),
+        type: data.type,
+        category: NotificationCategory.LISTING,
+        title: data.title,
+        body: data.body,
+        payload: {
+          listingId: listing._id.toString(),
+          href: `/dashboard/listings`,
+        },
+      });
+    } catch {
+      /* không chặn luồng duyệt */
+    }
+  }
+
   async approveByManager(listingId: string, actorId: string, note?: string) {
     const listing = await this.findOrgListing(listingId);
     if (listing.status !== ListingStatus.PENDING_MANAGER) {
@@ -136,6 +171,11 @@ export class ListingApprovalService {
     listing.status = ListingStatus.PENDING_ADMIN;
     this.pushHistory(listing, 'manager', actorId, 'approved', note);
     await listing.save();
+    await this.notifyListingOwner(listing, {
+      type: 'listing_approved',
+      title: 'Tin đã được Manager duyệt',
+      body: `"${listing.title}" đã chuyển sang chờ Admin nền tảng duyệt.`,
+    });
     return listing;
   }
 
@@ -148,6 +188,11 @@ export class ListingApprovalService {
     listing.status = ListingStatus.REJECTED_BY_MANAGER;
     this.pushHistory(listing, 'manager', actorId, 'rejected', reason);
     await listing.save();
+    await this.notifyListingOwner(listing, {
+      type: 'listing_rejected',
+      title: 'Tin bị Manager từ chối',
+      body: `"${listing.title}": ${reason}`,
+    });
     return listing;
   }
 
@@ -157,7 +202,7 @@ export class ListingApprovalService {
     if (listing.context === ListingContext.ORGANIZATION) {
       const cost =
         listing.postCost ||
-        calcListingPrice(listing.package, listing.duration ?? 7);
+        calcListingPrice(listing.package, listing.duration ?? 7, 'business');
       const orgId = listing.organizationId!.toString();
 
       await this.walletService.adjustBalance(orgId, -cost, {
@@ -188,6 +233,11 @@ export class ListingApprovalService {
     this.pushHistory(listing, 'platform_admin', actorId, 'approved', note);
     await listing.save();
     void this.frontendRevalidate.revalidateListing(listingId);
+    await this.notifyListingOwner(listing, {
+      type: 'listing_approved',
+      title: 'Tin đăng đã được duyệt',
+      body: `"${listing.title}" đã được xuất bản trên DatViet Land.`,
+    });
     return listing;
   }
 
@@ -206,7 +256,7 @@ export class ListingApprovalService {
       const cost =
         listing.postCost != null
           ? listing.postCost
-          : calcListingPrice(listing.package, listing.duration ?? 7);
+          : calcListingPrice(listing.package, listing.duration ?? 7, 'business');
       const refund = Math.max(0, cost - alreadyRefunded);
 
       if (refund > 0) {
@@ -223,6 +273,90 @@ export class ListingApprovalService {
     this.pushHistory(listing, 'platform_admin', actorId, 'rejected', reason);
     await listing.save();
     void this.frontendRevalidate.revalidateListing(listingId);
+    await this.notifyListingOwner(listing, {
+      type: 'listing_rejected',
+      title: 'Tin đăng bị từ chối',
+      body: `"${listing.title}": ${reason}`,
+    });
+    return listing;
+  }
+
+  async approveRenewalByManager(
+    listingId: string,
+    actorId: string,
+    note?: string,
+  ) {
+    const listing = await this.findOrgListing(listingId);
+    const pending = listing.pendingRenewal;
+    if (!pending) {
+      throw new BadRequestException('Tin không có yêu cầu gia hạn chờ duyệt');
+    }
+
+    const orgId = listing.organizationId!.toString();
+    const cost = pending.postCost ?? 0;
+
+    if (cost > 0) {
+      await this.walletService.adjustBalance(orgId, -cost, {
+        type: OrgTransactionType.SPEND,
+        description: `Gia hạn tin: ${listing.title}`,
+        performedBy: actorId,
+        listingId: listing._id.toString(),
+      });
+    }
+
+    const days = Math.max(1, pending.duration || 5);
+    const now = new Date();
+    const base =
+      listing.expiresAt && listing.expiresAt > now ? listing.expiresAt : now;
+    listing.expiresAt = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+    listing.duration = days;
+    listing.package = pending.package as never;
+    listing.postCost = cost;
+
+    if (listing.status === ListingStatus.EXPIRED) {
+      listing.status = ListingStatus.PUBLISHED;
+    }
+
+    listing.pendingRenewal = undefined;
+    this.pushHistory(
+      listing,
+      'manager',
+      actorId,
+      'renewal_approved',
+      note ??
+        `Duyệt gia hạn ${days} ngày · ${cost.toLocaleString('vi-VN')}đ`,
+    );
+    await listing.save();
+    void this.frontendRevalidate.revalidateListing(listingId);
+    await this.notifyListingOwner(listing, {
+      type: 'listing_renewal_approved',
+      title: 'Yêu cầu gia hạn đã được duyệt',
+      body: `"${listing.title}" đã được gia hạn thêm ${days} ngày.`,
+    });
+    return listing;
+  }
+
+  async rejectRenewalByManager(
+    listingId: string,
+    actorId: string,
+    note?: string,
+  ) {
+    const listing = await this.findOrgListing(listingId);
+    if (!listing.pendingRenewal) {
+      throw new BadRequestException('Tin không có yêu cầu gia hạn chờ duyệt');
+    }
+
+    const reason =
+      note?.trim() ||
+      'Manager/Owner từ chối yêu cầu gia hạn';
+    listing.pendingRenewal = undefined;
+    this.pushHistory(listing, 'manager', actorId, 'renewal_rejected', reason);
+    await listing.save();
+    await this.notifyListingOwner(listing, {
+      type: 'listing_renewal_rejected',
+      title: 'Yêu cầu gia hạn bị từ chối',
+      body: `"${listing.title}": ${reason}`,
+    });
     return listing;
   }
 }

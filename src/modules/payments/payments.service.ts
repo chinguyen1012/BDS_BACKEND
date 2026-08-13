@@ -31,13 +31,16 @@ import { CreateTopupPaymentDto } from './dto/create-topup-payment.dto';
 import { CreateListingPaymentDto } from './dto/create-listing-payment.dto';
 import { CreateListingRenewalPaymentDto } from './dto/create-listing-renewal-payment.dto';
 import { CreateListingDto } from '../listings/dto/create-listing.dto';
-import { calcListingPrice } from '../../common/utils/listing-price.util';
 import { ListingStatus } from '../../common/enums/listing.enums';
 import { OrgWalletService } from '../org-wallet/org-wallet.service';
 import { BudgetPoliciesService } from '../budget-policies/budget-policies.service';
 import { OrgMembershipsService } from '../org-memberships/org-memberships.service';
 import { ListingContext, OrgTransactionType, WalletType } from '../../common/enums/organization.enums';
 import { ListingDocument } from '../listings/schemas/listing.schema';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationCategory } from '../../common/enums/notification.enums';
+import { PricingService } from '../pricing/pricing.service';
+import { resolvePricingAccountForContext } from '../pricing/pricing.constants';
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   [PaymentMethod.QR]: 'Mã QR Sepay',
@@ -65,7 +68,29 @@ export class PaymentsService {
     private readonly orgWalletService: OrgWalletService,
     private readonly budgetPoliciesService: BudgetPoliciesService,
     private readonly orgMembershipsService: OrgMembershipsService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pricingService: PricingService,
   ) {}
+
+  /** Org wallet → business; cá nhân → accountType (owner DN → Pro). */
+  private async resolvePricingAccountType(
+    userId: string,
+    orgContext?: boolean,
+  ) {
+    if (orgContext) {
+      return resolvePricingAccountForContext(undefined, true);
+    }
+    const user = await this.usersService.findOne(userId);
+    return resolvePricingAccountForContext(user.accountType, false);
+  }
+
+  private listingTotal(
+    pkg: string | undefined,
+    duration: number | string | undefined,
+    accountType: string,
+  ) {
+    return this.pricingService.calcListingTotal(pkg, duration, accountType);
+  }
 
   private callbackUrl(path: string) {
     const apiUrl =
@@ -163,7 +188,12 @@ export class PaymentsService {
       return this.submitOrgListing(userId, dto);
     }
 
-    const totalAmount = calcListingPrice(dto.package, dto.duration ?? 7);
+    const accountType = await this.resolvePricingAccountType(userId, false);
+    const totalAmount = this.listingTotal(
+      dto.package,
+      dto.duration ?? 7,
+      accountType,
+    );
     const user = await this.usersService.findOne(userId);
     const balance = user.balance ?? 0;
     const balanceUsed = Math.min(balance, totalAmount);
@@ -231,12 +261,6 @@ export class PaymentsService {
     const listing = await this.listingsService.findOne(dto.listingId);
     const orgId = this.resolveOrgId(listing);
 
-    if (orgId) {
-      await this.orgMembershipsService.assertOwnerOrManager(orgId, userId);
-    } else if (listing.owner.toString() !== userId) {
-      throw new BadRequestException('Bạn không có quyền gia hạn tin này');
-    }
-
     const renewable = [
       ListingStatus.ACTIVE,
       ListingStatus.PUBLISHED,
@@ -249,10 +273,28 @@ export class PaymentsService {
     }
 
     const pkg = dto.package || listing.package || 'standard';
-    const duration = dto.duration || 7;
-    const totalAmount = calcListingPrice(pkg, duration);
+    const duration = dto.duration || 5;
+    const accountType = await this.resolvePricingAccountType(
+      userId,
+      Boolean(orgId),
+    );
+    const totalAmount = this.listingTotal(pkg, duration, accountType);
 
     if (orgId) {
+      const isManager = await this.orgMembershipsService.isOwnerOrManager(
+        orgId,
+        userId,
+      );
+      if (!isManager) {
+        return this.submitOrgRenewalRequest(
+          userId,
+          orgId,
+          dto.listingId,
+          pkg,
+          duration,
+          totalAmount,
+        );
+      }
       return this.createOrgListingRenewalPayment(
         userId,
         orgId,
@@ -262,6 +304,10 @@ export class PaymentsService {
         duration,
         totalAmount,
       );
+    }
+
+    if (listing.owner.toString() !== userId) {
+      throw new BadRequestException('Bạn không có quyền gia hạn tin này');
     }
 
     const user = await this.usersService.findOne(userId);
@@ -277,6 +323,7 @@ export class PaymentsService {
         totalAmount,
         balanceUsed,
         listing.title,
+        pkg,
       );
     }
 
@@ -362,6 +409,7 @@ export class PaymentsService {
         totalAmount,
         balanceUsed,
         listing.title,
+        pkg,
       );
     }
 
@@ -419,6 +467,7 @@ export class PaymentsService {
     totalAmount: number,
     balanceUsed: number,
     title: string,
+    pkg?: string,
   ) {
     if (balanceUsed > 0) {
       await this.transactionsService.spend(
@@ -432,6 +481,8 @@ export class PaymentsService {
       days: duration,
       userId,
       paid: true,
+      package: pkg,
+      postCost: totalAmount,
     });
 
     const user = await this.usersService.findOne(userId);
@@ -454,6 +505,7 @@ export class PaymentsService {
     totalAmount: number,
     balanceUsed: number,
     title: string,
+    pkg?: string,
   ) {
     if (balanceUsed > 0) {
       await this.orgWalletService.adjustBalance(organizationId, -balanceUsed, {
@@ -468,6 +520,8 @@ export class PaymentsService {
       days: duration,
       userId,
       paid: true,
+      package: pkg,
+      postCost: totalAmount,
     });
 
     const wallet = await this.orgWalletService.getBalance(organizationId);
@@ -483,12 +537,49 @@ export class PaymentsService {
     };
   }
 
+  private async submitOrgRenewalRequest(
+    userId: string,
+    organizationId: string,
+    listingId: string,
+    pkg: string,
+    duration: number,
+    totalAmount: number,
+  ) {
+    await this.budgetPoliciesService.assertCanPost(
+      organizationId,
+      userId,
+      totalAmount,
+      pkg,
+    );
+
+    const listing = await this.listingsService.requestOrgRenewal(
+      userId,
+      organizationId,
+      listingId,
+      { days: duration, package: pkg, postCost: totalAmount },
+    );
+
+    return {
+      mode: 'org_renewal_pending' as const,
+      listing,
+      totalAmount,
+      payAmount: 0,
+      balanceUsed: 0,
+      balance: 0,
+      organizationId,
+    };
+  }
+
   private async submitOrgListing(
     userId: string,
     dto: CreateListingPaymentDto,
   ) {
     const orgId = dto.organizationId!;
-    const totalAmount = calcListingPrice(dto.package, dto.duration ?? 7);
+    const totalAmount = this.listingTotal(
+      dto.package,
+      dto.duration ?? 7,
+      'business',
+    );
 
     await this.budgetPoliciesService.assertCanPost(
       orgId,
@@ -844,6 +935,22 @@ export class PaymentsService {
         order.transactionId!.toString(),
       );
       await this.usersService.adjustBalance(userId, order.totalAmount);
+      try {
+        await this.notificationsService.create({
+          userId,
+          type: 'wallet_topup',
+          category: NotificationCategory.FINANCE,
+          title: 'Nạp tiền thành công',
+          body: `Bạn đã nạp ${order.totalAmount.toLocaleString('vi-VN')}₫ vào ví.`,
+          payload: {
+            amount: order.totalAmount,
+            invoiceNumber: order.invoiceNumber,
+            href: '/dashboard/transactions',
+          },
+        });
+      } catch {
+        /* ignore */
+      }
     } else if (order.purpose === PaymentPurpose.ORG_TOPUP) {
       if (!order.organizationId) {
         throw new BadRequestException('Thiếu organizationId cho nạp ví org');
@@ -886,10 +993,12 @@ export class PaymentsService {
       const draft = (order.listingDraft ?? {}) as {
         duration?: number;
         listingId?: string;
+        package?: string;
       };
       const listingId =
         order.listingId?.toString() || draft.listingId || '';
-      const duration = Number(draft.duration) || 7;
+      const duration = Number(draft.duration) || 5;
+      const pkg = draft.package;
 
       if (!listingId) {
         throw new BadRequestException('Thiếu listingId cho gia hạn tin');
@@ -924,6 +1033,8 @@ export class PaymentsService {
         days: duration,
         userId,
         paid: true,
+        package: pkg,
+        postCost: order.totalAmount,
       });
 
       if (order.transactionId) {

@@ -6,6 +6,7 @@ import { User, UserDocument } from './schemas/user.schema';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { DEMO_USER_ID } from '../../common/constants';
+import { expireMembershipIfNeeded } from './membership.util';
 
 @Injectable()
 export class UsersService {
@@ -18,7 +19,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
-    return user;
+    return expireMembershipIfNeeded(user);
   }
 
   findOne(id: string = DEMO_USER_ID) {

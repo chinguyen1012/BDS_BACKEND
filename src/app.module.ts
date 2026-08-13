@@ -29,7 +29,11 @@ import { UploadModule } from './modules/upload/upload.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { NewsModule } from './modules/news/news.module';
+import { HelpModule } from './modules/help/help.module';
 import { AuctionModule } from './modules/auction/auction.module';
+import { LandPricesModule } from './modules/land-prices/land-prices.module';
+import { BannersModule } from './modules/banners/banners.module';
+import { PricingModule } from './modules/pricing/pricing.module';
 import { FrontendRevalidateModule } from './common/frontend-revalidate/frontend-revalidate.module';
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -73,7 +77,11 @@ const isProd = process.env.NODE_ENV === 'production';
     PaymentsModule,
     ProjectsModule,
     NewsModule,
+    HelpModule,
     AuctionModule,
+    LandPricesModule,
+    BannersModule,
+    PricingModule,
   ],
   controllers: [AppController],
   providers: [

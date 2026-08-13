@@ -15,6 +15,8 @@ import { ListingsModule } from '../listings/listings.module';
 import { OrgWalletModule } from '../org-wallet/org-wallet.module';
 import { BudgetPoliciesModule } from '../budget-policies/budget-policies.module';
 import { OrgMembershipsModule } from '../org-memberships/org-memberships.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
   imports: [
@@ -24,9 +26,11 @@ import { OrgMembershipsModule } from '../org-memberships/org-memberships.module'
     TransactionsModule,
     UsersModule,
     ListingsModule,
+    PricingModule,
     forwardRef(() => OrgWalletModule),
     BudgetPoliciesModule,
     OrgMembershipsModule,
+    NotificationsModule,
   ],
   controllers: [PaymentsController, PaymentWebhookController],
   providers: [PaymentsService, SepayService],

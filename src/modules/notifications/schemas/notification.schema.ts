@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
+import { NotificationCategory } from '../../../common/enums/notification.enums';
+
 export type NotificationDocument = HydratedDocument<Notification>;
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
@@ -13,6 +15,13 @@ export class Notification {
 
   @Prop({ required: true, trim: true })
   type: string;
+
+  @Prop({
+    enum: NotificationCategory,
+    default: NotificationCategory.OTHER,
+    index: true,
+  })
+  category: NotificationCategory;
 
   @Prop({ required: true, trim: true })
   title: string;
@@ -30,3 +39,4 @@ export class Notification {
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
 
 NotificationSchema.index({ userId: 1, readAt: 1, createdAt: -1 });
+NotificationSchema.index({ userId: 1, category: 1, createdAt: -1 });

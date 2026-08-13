@@ -19,6 +19,8 @@ import {
   normalizePagination,
   paginatedResult,
 } from '../../common/utils/pagination.util';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationCategory } from '../../common/enums/notification.enums';
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   [PaymentMethod.QR]: 'Mã QR',
@@ -36,7 +38,29 @@ export class TransactionsService {
     @InjectModel(Transaction.name)
     private readonly transactionModel: Model<TransactionDocument>,
     private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  private async notifyFinance(
+    userId: string,
+    data: { type: string; title: string; body: string; amount?: number },
+  ) {
+    try {
+      await this.notificationsService.create({
+        userId,
+        type: data.type,
+        category: NotificationCategory.FINANCE,
+        title: data.title,
+        body: data.body,
+        payload: {
+          amount: data.amount,
+          href: '/dashboard/transactions',
+        },
+      });
+    } catch {
+      /* ignore */
+    }
+  }
 
   findAll(
     owner: string = DEMO_USER_ID,
@@ -82,6 +106,12 @@ export class TransactionsService {
     });
 
     const user = await this.usersService.adjustBalance(owner, dto.amount);
+    await this.notifyFinance(owner, {
+      type: 'wallet_topup',
+      title: 'Nạp tiền thành công',
+      body: `Bạn đã nạp ${dto.amount.toLocaleString('vi-VN')}₫ vào ví.`,
+      amount: dto.amount,
+    });
 
     return { transaction, balance: user.balance };
   }
@@ -139,6 +169,12 @@ export class TransactionsService {
     });
 
     const user = await this.usersService.adjustBalance(owner, -Math.abs(amount));
+    await this.notifyFinance(owner, {
+      type: 'wallet_spend',
+      title: 'Đã trừ số dư ví',
+      body: description,
+      amount: Math.abs(amount),
+    });
 
     return { transaction, balance: user.balance };
   }
@@ -161,6 +197,12 @@ export class TransactionsService {
     });
 
     const user = await this.usersService.adjustBalance(owner, value);
+    await this.notifyFinance(owner, {
+      type: 'wallet_refund',
+      title: 'Hoàn tiền vào ví',
+      body: description,
+      amount: value,
+    });
 
     return { transaction, balance: user.balance };
   }

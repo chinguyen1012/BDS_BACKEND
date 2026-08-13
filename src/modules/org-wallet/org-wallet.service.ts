@@ -8,6 +8,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import {
+  normalizePagination,
+  paginatedResult,
+} from '../../common/utils/pagination.util';
+import {
   Organization,
   OrganizationDocument,
 } from '../organizations/schemas/organization.schema';
@@ -37,12 +41,28 @@ export class OrgWalletService {
     return { balance: org.walletBalance, organizationId };
   }
 
-  listTransactions(organizationId: string, limit = 50) {
-    return this.txModel
-      .find({ organizationId: new Types.ObjectId(organizationId) })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .exec();
+  async listTransactions(
+    organizationId: string,
+    page?: number | string,
+    limit?: number | string,
+  ) {
+    const { page: safePage, limit: safeLimit, skip } = normalizePagination(
+      page,
+      limit,
+    );
+    const filter = { organizationId: new Types.ObjectId(organizationId) };
+
+    const [items, total] = await Promise.all([
+      this.txModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .exec(),
+      this.txModel.countDocuments(filter).exec(),
+    ]);
+
+    return paginatedResult(items, total, safePage, safeLimit);
   }
 
   async adjustBalance(

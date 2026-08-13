@@ -30,6 +30,26 @@ export class ApprovalHistoryEntry {
 
 const ApprovalHistorySchema = SchemaFactory.createForClass(ApprovalHistoryEntry);
 
+@Schema({ _id: false })
+export class PendingRenewal {
+  @Prop({ required: true })
+  duration: number;
+
+  @Prop({ required: true })
+  package: string;
+
+  @Prop({ default: 0 })
+  postCost: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  requestedBy: Types.ObjectId;
+
+  @Prop({ default: () => new Date() })
+  requestedAt: Date;
+}
+
+const PendingRenewalSchema = SchemaFactory.createForClass(PendingRenewal);
+
 @Schema({ timestamps: true })
 export class Listing {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
@@ -167,6 +187,10 @@ export class Listing {
   /** Đã hoàn về ví khi Admin từ chối (tránh hoàn 2 lần) */
   @Prop({ default: 0 })
   refundedAmount: number;
+
+  /** Staff gửi yêu cầu gia hạn — chờ Owner/Manager duyệt. */
+  @Prop({ type: PendingRenewalSchema })
+  pendingRenewal?: PendingRenewal;
 }
 
 export const ListingSchema = SchemaFactory.createForClass(Listing);

@@ -58,6 +58,22 @@ export class PlatformSetting {
 
   @Prop({ type: PaginationSettingsSchema })
   pagination?: PaginationSettings;
+
+  /** Cấu hình giá gói tin + % membership (key = 'pricing'). */
+  @Prop({ type: Object })
+  packages?: Record<string, unknown>;
+
+  @Prop({ type: Object })
+  membership?: Record<string, unknown>;
+
+  @Prop({ type: Object })
+  showcases?: Record<string, unknown>;
+
+  @Prop({ type: Array })
+  compareRows?: unknown[];
+
+  @Prop({ type: Array })
+  faqs?: unknown[];
 }
 
 export const PlatformSettingSchema =

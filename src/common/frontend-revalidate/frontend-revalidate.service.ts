@@ -63,11 +63,14 @@ export class FrontendRevalidateService {
   }
 
   /** Invalidate trang chi tiết + danh sách tin đăng. */
-  revalidateListing(id: string) {
-    return this.revalidate({
-      tags: [`listing-${id}`, 'listings'],
-      paths: [`/properties/${id}`, '/properties'],
-    });
+  revalidateListing(id: string, publicCode?: string | null) {
+    const tags = [`listing-${id}`, 'listings'];
+    const paths = [`/properties/${id}`, '/properties'];
+    if (publicCode && publicCode !== id) {
+      tags.push(`listing-${publicCode}`);
+      paths.push(`/properties/${publicCode}`);
+    }
+    return this.revalidate({ tags, paths });
   }
 
   revalidateNews(slug: string) {

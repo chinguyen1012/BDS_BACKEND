@@ -52,6 +52,28 @@ export class ListingApprovalController {
   ) {
     return this.approvalService.rejectByManager(id, userId, body.note);
   }
+
+  @Post(':id/approve/renewal')
+  @UseGuards(OrgContextGuard)
+  @RequirePermissions(PERMISSIONS.LISTING_APPROVE_MANAGER)
+  approveRenewal(
+    @Param('id') id: string,
+    @CurrentUser('sub') userId: string,
+    @Body() body: { note?: string; organizationId?: string },
+  ) {
+    return this.approvalService.approveRenewalByManager(id, userId, body.note);
+  }
+
+  @Post(':id/reject/renewal')
+  @UseGuards(OrgContextGuard)
+  @RequirePermissions(PERMISSIONS.LISTING_APPROVE_MANAGER)
+  rejectRenewal(
+    @Param('id') id: string,
+    @CurrentUser('sub') userId: string,
+    @Body() body: { note?: string; organizationId?: string },
+  ) {
+    return this.approvalService.rejectRenewalByManager(id, userId, body.note);
+  }
 }
 
 @Controller('platform-admin/listings')

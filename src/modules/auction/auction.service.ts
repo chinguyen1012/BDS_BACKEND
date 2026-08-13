@@ -50,6 +50,8 @@ import {
   OrgRoleTemplateDocument,
 } from '../org-roles/schemas/org-role-template.schema';
 import { UsersService } from '../users/users.service';
+import { PricingService } from '../pricing/pricing.service';
+import { resolvePricingAccountForContext } from '../pricing/pricing.constants';
 import {
   PlaceAuctionBidDto,
   UpdateAuctionSettingsDto,
@@ -87,6 +89,7 @@ export class AuctionService implements OnModuleInit {
     @InjectModel(OrgRoleTemplate.name)
     private readonly roleModel: Model<OrgRoleTemplateDocument>,
     private readonly usersService: UsersService,
+    private readonly pricingService: PricingService,
   ) {}
 
   async onModuleInit() {
@@ -310,9 +313,14 @@ export class AuctionService implements OnModuleInit {
       );
       const minutes = Math.floor(elapsedMs / 60_000);
       if (minutes > 0) {
+        // Burn theo mức ký quỹ thực tế / ngày (đã gồm ưu đãi membership),
+        // không burn full dailyBid — tránh hết hold sớm hơn durationDays.
+        const originalHold = bid.heldAmount + bid.chargedAmount;
+        const burnDaily =
+          originalHold / Math.max(1, bid.durationDays || 1);
         const charge = Math.min(
           bid.heldAmount,
-          Math.round(minutes * this.perMinuteRate(bid.dailyBidAmount)),
+          Math.round(minutes * this.perMinuteRate(burnDaily)),
         );
         if (charge > 0) {
           bid.heldAmount -= charge;
@@ -714,38 +722,67 @@ export class AuctionService implements OnModuleInit {
       );
     }
 
-    const hold = dailyBid * days;
+    const holdQuoteAccount = resolvePricingAccountForContext(
+      isOrgListing
+        ? undefined
+        : (await this.usersService.findOne(userId)).accountType,
+      isOrgListing,
+    );
+    const auctionQuote = this.pricingService.quoteAuction(
+      dailyBid,
+      days,
+      holdQuoteAccount,
+    );
+    const hold = auctionQuote.holdAmount;
     if (isOrgListing && listingOrgId) {
       const balance = await this.getOrgBalance(listingOrgId);
       if (balance < hold) {
         throw new BadRequestException(
-          `Số dư ví Organization không đủ. Cần ký quỹ ${hold.toLocaleString('vi-VN')}đ`,
+          `Số dư ví Organization không đủ. Cần ký quỹ ${hold.toLocaleString('vi-VN')}đ` +
+            (auctionQuote.auctionFeeDiscountPercent > 0
+              ? ` (đã giảm ${auctionQuote.auctionFeeDiscountPercent}% Doanh nghiệp, gốc ${auctionQuote.grossHold.toLocaleString('vi-VN')}đ)`
+              : ''),
         );
       }
     } else {
       const balance = await this.usersService.getBalance(userId);
       if (balance.balance < hold) {
         throw new BadRequestException(
-          `Số dư không đủ. Cần ký quỹ ${hold.toLocaleString('vi-VN')}đ`,
+          `Số dư không đủ. Cần ký quỹ ${hold.toLocaleString('vi-VN')}đ` +
+            (auctionQuote.auctionFeeDiscountPercent > 0
+              ? ` (đã giảm ${auctionQuote.auctionFeeDiscountPercent}% Pro, gốc ${auctionQuote.grossHold.toLocaleString('vi-VN')}đ)`
+              : ''),
         );
       }
     }
 
-    // Close existing active bid on same listing (hoàn đủ phần chưa dùng — không phạt)
-    const existing = await this.bidModel
-      .find({
+    // Tin đang có lệnh đấu giá active → bắt buộc hủy trước khi đặt lại
+    const existingActive = await this.bidModel
+      .findOne({
         listingId: listing._id,
         status: AuctionBidStatus.ACTIVE,
+        endsAt: { $gt: now },
+        heldAmount: { $gt: 0 },
       })
+      .select('_id dailyBidAmount currentRank endsAt')
+      .lean()
       .exec();
-    for (const old of existing) {
-      await this.settleAccrual(old, now, {
-        finalize: true,
-        nextStatus: AuctionBidStatus.CANCELLED,
-      });
+
+    if (existingActive) {
+      const rankLabel =
+        existingActive.currentRank != null
+          ? ` (đang hạng #${existingActive.currentRank})`
+          : '';
+      throw new BadRequestException(
+        `Tin này đang có lệnh đấu giá${rankLabel}. Hãy hủy lệnh hiện tại trong tab “Lệnh đấu giá của bạn” rồi đặt lại.`,
+      );
     }
 
-    const holdDescription = `Ký quỹ đấu giá đẩy tin "${listing.title}" — ${dailyBid.toLocaleString('vi-VN')}đ/ngày × ${days} ngày`;
+    const discountNote =
+      auctionQuote.auctionFeeDiscountPercent > 0
+        ? ` (ưu đãi ${auctionQuote.auctionFeeDiscountPercent}%)`
+        : '';
+    const holdDescription = `Ký quỹ đấu giá đẩy tin "${listing.title}" — ${dailyBid.toLocaleString('vi-VN')}đ/ngày × ${days} ngày${discountNote}`;
 
     if (isOrgListing && listingOrgId) {
       await this.adjustOrgBalance(listingOrgId, -hold, {

@@ -48,6 +48,18 @@ export class User {
   @Prop({ enum: ['individual', 'pro', 'business'], default: 'individual' })
   accountType: string;
 
+  /** Chu kỳ gói cũ (monthly/yearly) — giữ để đọc user legacy. */
+  @Prop({ enum: ['monthly', 'yearly'], required: false })
+  membershipCycle?: 'monthly' | 'yearly';
+
+  /** Số tháng lần mua gần nhất: 1 | 3 | 6. */
+  @Prop({ required: false })
+  membershipMonths?: number;
+
+  /** Hết hạn thì accountType về individual. User cũ chưa có field thì coi như còn hạn. */
+  @Prop({ required: false })
+  membershipExpiresAt?: Date;
+
   @Prop({ enum: SystemRole, default: SystemRole.USER })
   systemRole: SystemRole;
 
@@ -62,6 +74,12 @@ export class User {
 
   @Prop({ required: false, select: false })
   password?: string;
+
+  @Prop({ trim: true, sparse: true, unique: true })
+  googleId?: string;
+
+  @Prop({ enum: ['local', 'google'], default: 'local' })
+  authProvider: 'local' | 'google';
 
   @Prop({ type: UserSettingsSchema, default: () => ({}) })
   settings: UserSettings;

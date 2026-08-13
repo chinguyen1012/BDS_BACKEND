@@ -10,6 +10,7 @@ import {
 import { BudgetPoliciesModule } from '../budget-policies/budget-policies.module';
 import { OrgWalletModule } from '../org-wallet/org-wallet.module';
 import { TransactionsModule } from '../transactions/transactions.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import {
   OrgRoleTemplate,
   OrgRoleTemplateSchema,
@@ -27,6 +28,7 @@ import { PlatformAdminGuard } from '../../common/permissions/platform-admin.guar
     BudgetPoliciesModule,
     OrgWalletModule,
     TransactionsModule,
+    NotificationsModule,
     MongooseModule.forFeature([
       { name: Listing.name, schema: ListingSchema },
       { name: OrgRoleTemplate.name, schema: OrgRoleTemplateSchema },

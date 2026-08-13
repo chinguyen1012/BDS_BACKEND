@@ -8,6 +8,7 @@ import {
   TransactionSchema,
 } from './schemas/transaction.schema';
 import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { UsersModule } from '../users/users.module';
       { name: Transaction.name, schema: TransactionSchema },
     ]),
     UsersModule,
+    NotificationsModule,
   ],
   controllers: [TransactionsController],
   providers: [TransactionsService],

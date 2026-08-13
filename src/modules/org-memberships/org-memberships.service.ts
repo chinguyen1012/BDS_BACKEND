@@ -110,6 +110,26 @@ export class OrgMembershipsService {
     return Boolean(org);
   }
 
+  /** User có phải Owner của org này không (theo ownerId). */
+  async isOrganizationOwner(organizationId: string, userId: string) {
+    if (
+      !Types.ObjectId.isValid(organizationId) ||
+      !Types.ObjectId.isValid(userId)
+    ) {
+      return false;
+    }
+    const org = await this.orgModel
+      .findOne({
+        _id: new Types.ObjectId(organizationId),
+        ownerId: new Types.ObjectId(userId),
+        deletedAt: null,
+      })
+      .select('_id')
+      .lean()
+      .exec();
+    return Boolean(org);
+  }
+
   async createOwnerMembership(organizationId: string, userId: string) {
     const ownerRole = await this.rolesService.findByKey(OrgRoleKey.OWNER);
     if (!ownerRole) {
@@ -175,10 +195,19 @@ export class OrgMembershipsService {
 
   /** Owner hoặc Manager mới được thao tác quản lý tin org (vd: gia hạn). */
   async assertOwnerOrManager(organizationId: string, userId: string) {
-    const org = await this.orgModel.findById(organizationId).exec();
-    if (!org) throw new NotFoundException('Không tìm thấy Organization');
+    const ok = await this.isOwnerOrManager(organizationId, userId);
+    if (!ok) {
+      throw new ForbiddenException(
+        'Chỉ Owner hoặc Manager mới được thao tác này',
+      );
+    }
+  }
 
-    if (org.ownerId.toString() === userId) return;
+  async isOwnerOrManager(organizationId: string, userId: string) {
+    const org = await this.orgModel.findById(organizationId).exec();
+    if (!org) return false;
+
+    if (org.ownerId.toString() === userId) return true;
 
     const membership = await this.membershipModel
       .findOne({
@@ -189,16 +218,10 @@ export class OrgMembershipsService {
       })
       .exec();
 
-    if (!membership) {
-      throw new ForbiddenException('Bạn không thuộc Organization này');
-    }
+    if (!membership) return false;
 
     const key = await this.getRoleKey(membership.roleId);
-    if (key !== OrgRoleKey.OWNER && key !== OrgRoleKey.MANAGER) {
-      throw new ForbiddenException(
-        'Chỉ Owner hoặc Manager mới được gia hạn tin Organization',
-      );
-    }
+    return key === OrgRoleKey.OWNER || key === OrgRoleKey.MANAGER;
   }
 
   findByOrg(organizationId: string) {

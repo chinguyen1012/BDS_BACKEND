@@ -28,8 +28,12 @@ export class OrgWalletController {
 
   @Get('transactions')
   @RequirePermissions(PERMISSIONS.ORG_WALLET_VIEW)
-  transactions(@Param('id') id: string, @Query('limit') limit?: string) {
-    return this.walletService.listTransactions(id, limit ? Number(limit) : 50);
+  transactions(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.walletService.listTransactions(id, page, limit);
   }
 
   @Post('topup')

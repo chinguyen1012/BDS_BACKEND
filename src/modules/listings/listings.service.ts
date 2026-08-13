@@ -116,20 +116,26 @@ export class ListingsService {
     });
   }
 
-  /** Tin Organization — chờ Manager duyệt, không trừ ví ngay. */
+  /** Tin Organization — Staff chờ Manager; Owner bỏ qua Manager, chờ Admin nền tảng. */
   async createOrgPending(
     userId: string,
     organizationId: string,
     dto: CreateListingDto,
   ) {
-    const postCost = calcListingPrice(dto.package, dto.duration ?? 7);
+    const postCost = calcListingPrice(dto.package, dto.duration ?? 7, 'business');
+    const isOwner = await this.orgMembershipsService.isOrganizationOwner(
+      organizationId,
+      userId,
+    );
     return this.createWithPublicCode({
       ...dto,
       owner: new Types.ObjectId(userId),
       postedBy: new Types.ObjectId(userId),
       context: ListingContext.ORGANIZATION,
       organizationId: new Types.ObjectId(organizationId),
-      status: ListingStatus.PENDING_MANAGER,
+      status: isOwner
+        ? ListingStatus.PENDING_ADMIN
+        : ListingStatus.PENDING_MANAGER,
       postCost,
       startDate: undefined,
       expiresAt: undefined,
@@ -678,6 +684,12 @@ export class ListingsService {
       throw new NotFoundException('Không tìm thấy tin đăng');
     }
 
+    await this.ensurePublicCode(listing);
+    void this.frontendRevalidate.revalidateListing(
+      listing._id.toString(),
+      listing.publicCode,
+    );
+
     return {
       contacts: listing.contacts,
       agent: this.formatPublicAgent(listing),
@@ -748,7 +760,11 @@ export class ListingsService {
     const cost =
       listing.postCost != null
         ? listing.postCost
-        : calcListingPrice(listing.package, listing.duration ?? 7);
+        : calcListingPrice(
+            listing.package,
+            listing.duration ?? 7,
+            (await this.usersService.findOne(userId)).accountType,
+          );
 
     if (cost > 0) {
       const user = await this.usersService.findOne(userId);
@@ -787,7 +803,15 @@ export class ListingsService {
    */
   async renew(
     id: string,
-    options: { days: number; userId: string; paid?: boolean },
+    options: {
+      days: number;
+      userId: string;
+      paid?: boolean;
+      package?: string;
+      postCost?: number;
+      /** Gọi nội bộ sau khi Manager/Owner duyệt gia hạn Staff. */
+      skipPermissionCheck?: boolean;
+    },
   ) {
     if (!options.paid) {
       throw new ForbiddenException(
@@ -798,16 +822,18 @@ export class ListingsService {
     const listing = await this.findOne(id);
 
     const orgId = listing.organizationId?.toString();
-    if (
-      listing.context === ListingContext.ORGANIZATION &&
-      orgId
-    ) {
-      await this.orgMembershipsService.assertOwnerOrManager(
-        orgId,
-        options.userId,
-      );
-    } else if (listing.owner.toString() !== options.userId) {
-      throw new ForbiddenException('Bạn không có quyền gia hạn tin này');
+    if (!options.skipPermissionCheck) {
+      if (
+        listing.context === ListingContext.ORGANIZATION &&
+        orgId
+      ) {
+        await this.orgMembershipsService.assertOwnerOrManager(
+          orgId,
+          options.userId,
+        );
+      } else if (listing.owner.toString() !== options.userId) {
+        throw new ForbiddenException('Bạn không có quyền gia hạn tin này');
+      }
     }
 
     const renewable: ListingStatus[] = [
@@ -822,7 +848,7 @@ export class ListingsService {
       );
     }
 
-    const days = Math.max(1, Math.floor(options.days) || 7);
+    const days = Math.max(1, Math.floor(options.days) || 5);
     const now = new Date();
     const base =
       listing.expiresAt && listing.expiresAt > now
@@ -831,6 +857,12 @@ export class ListingsService {
 
     listing.expiresAt = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
     listing.duration = days;
+    if (options.package) {
+      listing.package = options.package as never;
+    }
+    if (options.postCost != null) {
+      listing.postCost = options.postCost;
+    }
 
     // Chỉ khôi phục hiển thị nếu tin đã hết hạn — giữ nguyên status nếu đang live
     if (listing.status === ListingStatus.EXPIRED) {
@@ -840,8 +872,64 @@ export class ListingsService {
           : ListingStatus.ACTIVE;
     }
 
+    listing.pendingRenewal = undefined;
     await listing.save();
     void this.frontendRevalidate.revalidateListing(id);
+    return listing;
+  }
+
+  /** Staff Organization gửi yêu cầu gia hạn — chờ Owner/Manager duyệt. */
+  async requestOrgRenewal(
+    userId: string,
+    organizationId: string,
+    listingId: string,
+    options: { days: number; package: string; postCost: number },
+  ) {
+    const listing = await this.findOne(listingId);
+    if (listing.context !== ListingContext.ORGANIZATION) {
+      throw new BadRequestException('Tin không thuộc Organization');
+    }
+    if (listing.organizationId?.toString() !== organizationId) {
+      throw new BadRequestException('Tin không thuộc Organization này');
+    }
+
+    const posterId = (listing.postedBy ?? listing.owner)?.toString();
+    if (posterId !== userId) {
+      throw new ForbiddenException(
+        'Chỉ người đăng tin mới được gửi yêu cầu gia hạn',
+      );
+    }
+
+    const renewable: ListingStatus[] = [
+      ListingStatus.ACTIVE,
+      ListingStatus.PUBLISHED,
+      ListingStatus.EXPIRED,
+    ];
+    if (!renewable.includes(listing.status)) {
+      throw new BadRequestException(
+        'Chỉ gia hạn được tin đang hiển thị hoặc đã hết hạn',
+      );
+    }
+
+    if (listing.pendingRenewal) {
+      throw new BadRequestException('Tin đang có yêu cầu gia hạn chờ duyệt');
+    }
+
+    listing.pendingRenewal = {
+      duration: options.days,
+      package: options.package,
+      postCost: options.postCost,
+      requestedBy: new Types.ObjectId(userId),
+      requestedAt: new Date(),
+    };
+    listing.approvalHistory.push({
+      step: 'staff',
+      actorId: new Types.ObjectId(userId),
+      action: 'renewal_requested',
+      note: `Yêu cầu gia hạn ${options.days} ngày · gói ${options.package} · ${options.postCost.toLocaleString('vi-VN')}đ`,
+      at: new Date(),
+    });
+    await listing.save();
     return listing;
   }
 
@@ -856,10 +944,24 @@ export class ListingsService {
 
   async removeByOwner(id: string, userId: string) {
     const listing = await this.findOne(id);
-    if (listing.owner.toString() !== userId) {
+    const orgId = listing.organizationId?.toString();
+
+    if (listing.context === ListingContext.ORGANIZATION && orgId) {
+      const posterId = (listing.postedBy ?? listing.owner)?.toString();
+      const isPoster = posterId === userId;
+      const isManager = await this.orgMembershipsService.isOwnerOrManager(
+        orgId,
+        userId,
+      );
+      if (!isPoster && !isManager) {
+        throw new ForbiddenException('Bạn không có quyền xóa tin này');
+      }
+    } else if (listing.owner.toString() !== userId) {
       throw new ForbiddenException('Bạn không có quyền xóa tin này');
     }
+
     await listing.deleteOne();
+    void this.frontendRevalidate.revalidateListing(id);
     return { deleted: true, id };
   }
 }

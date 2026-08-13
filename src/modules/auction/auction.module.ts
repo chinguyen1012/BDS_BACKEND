@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { PlatformAdminModule } from '../platform-admin/platform-admin.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { Listing, ListingSchema } from '../listings/schemas/listing.schema';
 import {
   Transaction,
@@ -54,6 +55,7 @@ import {
       { name: OrgRoleTemplate.name, schema: OrgRoleTemplateSchema },
     ]),
     UsersModule,
+    PricingModule,
     PlatformAdminModule,
   ],
   controllers: [

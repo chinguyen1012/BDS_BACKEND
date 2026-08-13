@@ -96,6 +96,7 @@ export class OrgInvitationsService {
           organizationId,
           organizationName: org?.name,
           roleName: role?.name,
+          href: '/dashboard/notifications',
         },
       });
     }
@@ -198,6 +199,10 @@ export class OrgInvitationsService {
       type: 'org_invitation_accepted',
       title: 'Đã tham gia Organization',
       body: `Bạn đã tham gia ${org?.name ?? 'Organization'} thành công.`,
+      payload: {
+        organizationId: invitation.organizationId.toString(),
+        href: `/dashboard/org/${invitation.organizationId.toString()}`,
+      },
     });
 
     return membership;
